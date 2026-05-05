@@ -1,185 +1,264 @@
 #!/usr/bin/env python3
 """
-Mother Earth Radio - Player per Linux
-Richiede: vlc oppure mpv installato sul sistema
-Installa dipendenze Python: pip install requests
+Mother Earth Radio - Player per Linux con interfaccia curses
+Naviga con i tasti freccia, seleziona con INVIO, esci con Q
+Richiede: mpv installato sul sistema
 """
 
+import curses
 import subprocess
 import sys
-import os
+import threading
 
-# ── Canali disponibili ────────────────────────────────────────────────────────
+# ── Canali e stream ───────────────────────────────────────────────────────────
 
-CHANNELS = {
-    "1": {
-        "name": "🌍 Main (Eclectic)",
-        "streams": {
-            "FLAC 192kHz": "https://stream.motherearthradio.de/listen/motherearth/motherearth",
-            "FLAC 96kHz":  "https://stream.motherearthradio.de/listen/motherearth/motherearth.flac-lo",
-            "AAC 320kbps": "https://stream.motherearthradio.de/listen/motherearth/motherearth.aac",
-            "MP3 320kbps": "https://stream.motherearthradio.de/listen/motherearth/motherearth.mp3",
-        }
+CHANNELS = [
+    {
+        "name": "Main (Eclectic)",
+        "streams": [
+            ("FLAC 192kHz", "https://stream.motherearthradio.de/listen/motherearth/motherearth"),
+            ("FLAC 96kHz",    "https://stream.motherearthradio.de/listen/motherearth/motherearth.flac-lo"),
+            ("AAC 320kbps",   "https://stream.motherearthradio.de/listen/motherearth/motherearth.aac"),
+            ("MP3 320kbps",   "https://stream.motherearthradio.de/listen/motherearth/motherearth.mp3"),
+        ]
     },
-    "2": {
-        "name": "🎷 Jazz",
-        "streams": {
-            "FLAC 192kHz": "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz",
-            "FLAC 96kHz":  "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.flac-lo",
-            "AAC 320kbps": "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.aac",
-            "MP3 320kbps": "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.mp3",
-        }
+    {
+        "name": "Jazz",
+        "streams": [
+            ("FLAC 192kHz", "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz"),
+            ("FLAC 96kHz",    "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.flac-lo"),
+            ("AAC 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.aac"),
+            ("MP3 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_jazz/motherearth.jazz.mp3"),
+        ]
     },
-    "3": {
-        "name": "🎻 Classical (Klassik)",
-        "streams": {
-            "FLAC 192kHz": "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik",
-            "FLAC 96kHz":  "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.flac-lo",
-            "AAC 320kbps": "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.aac",
-            "MP3 320kbps": "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.mp3",
-        }
+    {
+        "name": "Classical",
+        "streams": [
+            ("FLAC 192kHz", "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik"),
+            ("FLAC 96kHz",    "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.flac-lo"),
+            ("AAC 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.aac"),
+            ("MP3 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_klasseik/motherearth.klasseik.mp3"),
+        ]
     },
-    "4": {
-        "name": "🎸 Instrumental",
-        "streams": {
-            "FLAC 192kHz": "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental",
-            "FLAC 96kHz":  "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.flac-lo",
-            "AAC 320kbps": "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.aac",
-            "MP3 320kbps": "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.mp3",
-        }
+    {
+        "name": "Instrumental",
+        "streams": [
+            ("FLAC 192kHz", "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental"),
+            ("FLAC 96kHz",    "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.flac-lo"),
+            ("AAC 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.aac"),
+            ("MP3 320kbps",   "https://stream.motherearthradio.de/listen/motherearth_instrumental/motherearth.instrumental.mp3"),
+        ]
     },
+]
+
+# ── Stato globale ─────────────────────────────────────────────────────────────
+
+state = {
+    "proc":       None,
+    "ch_idx":     0,
+    "q_idx":      0,
+    "playing_ch": None,
+    "playing_q":  None,
+    "focus":      "channel",   # "channel" | "quality"
+    "status":     "Premi INVIO per avviare la riproduzione",
 }
 
-QUALITY_ORDER = ["FLAC 192kHz", "FLAC 96kHz", "AAC 320kbps", "MP3 320kbps"]
+proc_lock = threading.Lock()
 
-# ── Colori ANSI ───────────────────────────────────────────────────────────────
-
-GREEN   = "\033[92m"
-CYAN    = "\033[96m"
-YELLOW  = "\033[93m"
-RED     = "\033[91m"
-BOLD    = "\033[1m"
-DIM     = "\033[2m"
-RESET   = "\033[0m"
-
-# ── Utility ───────────────────────────────────────────────────────────────────
-
-def clear():
-    os.system("clear")
+# ── Player ────────────────────────────────────────────────────────────────────
 
 def detect_player():
-    """Rileva il player disponibile sul sistema."""
-    for player in ["mpv", "vlc", "ffplay"]:
-        if subprocess.call(["which", player], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL) == 0:
-            return player
+    for p in ["mpv", "vlc", "ffplay"]:
+        if subprocess.call(["which", p],
+                           stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL) == 0:
+            return p
     return None
 
-def build_command(player, url):
-    """Costruisce il comando per il player scelto."""
+def build_cmd(player, url):
     if player == "mpv":
         return ["mpv", "--no-video", "--msg-level=all=error", url]
     elif player == "vlc":
         return ["vlc", "--no-video", "--quiet", url]
-    elif player == "ffplay":
+    else:
         return ["ffplay", "-nodisp", "-loglevel", "error", url]
 
-# ── UI ────────────────────────────────────────────────────────────────────────
-
-def print_banner():
-    print(f"""
-{GREEN}{BOLD}╔══════════════════════════════════════════════════╗
-║        🌿  Mother Earth Radio  Player  🌿        ║
-║         Hi-Res FLAC Streaming · 192kHz           ║
-╚══════════════════════════════════════════════════╝{RESET}
-""")
-
-def choose_channel():
-    print(f"{CYAN}{BOLD}  Scegli un canale:{RESET}\n")
-    for key, ch in CHANNELS.items():
-        print(f"  {BOLD}{key}{RESET}  {ch['name']}")
-    print(f"  {BOLD}q{RESET}  Esci\n")
-
-    while True:
-        choice = input(f"{YELLOW}  Canale [{'/'.join(CHANNELS.keys())}/q]: {RESET}").strip().lower()
-        if choice == "q":
-            print(f"\n{DIM}  Arrivederci!{RESET}\n")
-            sys.exit(0)
-        if choice in CHANNELS:
-            return choice
-        print(f"{RED}  Scelta non valida.{RESET}")
-
-def choose_quality(channel_key):
-    ch = CHANNELS[channel_key]
-    print(f"\n{CYAN}{BOLD}  Qualità audio per {ch['name']}:{RESET}\n")
-    keys = list(ch["streams"].keys())
-    for i, q in enumerate(keys, 1):
-        star = f"{GREEN}★{RESET}" if q == "FLAC 192kHz" else " "
-        print(f"  {BOLD}{i}{RESET}  {star} {q}")
-    print(f"  {BOLD}b{RESET}  ← Indietro\n")
-
-    while True:
-        choice = input(f"{YELLOW}  Qualità [1-{len(keys)}/b]: {RESET}").strip().lower()
-        if choice == "b":
-            return None
-        if choice.isdigit() and 1 <= int(choice) <= len(keys):
-            return keys[int(choice) - 1]
-        print(f"{RED}  Scelta non valida.{RESET}")
-
-def play(player, channel_key, quality):
-    ch = CHANNELS[channel_key]
-    url = ch["streams"][quality]
-    cmd = build_command(player, url)
-
-    clear()
-    print_banner()
-    print(f"  {GREEN}▶  In riproduzione:{RESET}  {BOLD}{ch['name']}{RESET}")
-    print(f"  {DIM}Qualità:{RESET}  {quality}")
-    print(f"  {DIM}Player: {player}{RESET}")
-    print(f"  {DIM}URL:    {url}{RESET}")
-    print(f"\n  {YELLOW}Premi Ctrl+C per fermare e tornare al menu.{RESET}\n")
-
-    proc = None
-    try:
-        proc = subprocess.Popen(cmd)
-        proc.wait()
-    except KeyboardInterrupt:
-        if proc:
+def stop_playback():
+    with proc_lock:
+        proc = state["proc"]
+        if proc and proc.poll() is None:
             proc.terminate()
             try:
                 proc.wait(timeout=3)
             except subprocess.TimeoutExpired:
                 proc.kill()
-        print(f"\n  {DIM}Riproduzione interrotta.{RESET}\n")
+        state["proc"] = None
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+def start_playback(player, ch_idx, q_idx):
+    stop_playback()
+    url = CHANNELS[ch_idx]["streams"][q_idx][1]
+    cmd = build_cmd(player, url)
+    with proc_lock:
+        state["proc"] = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+    state["playing_ch"] = ch_idx
+    state["playing_q"]  = q_idx
+    ch_name = CHANNELS[ch_idx]["name"]
+    q_name  = CHANNELS[ch_idx]["streams"][q_idx][0]
+    state["status"] = f">> {ch_name}  |  {q_name}"
 
-def main():
-    clear()
-    print_banner()
+# ── Disegno curses ────────────────────────────────────────────────────────────
 
-    player = detect_player()
-    if not player:
-        print(f"{RED}{BOLD}  Errore: nessun player trovato.{RESET}")
-        print(f"  Installa VLC o MPV con:\n")
-        print(f"  {CYAN}sudo apt install mpv{RESET}  oppure  {CYAN}sudo apt install vlc{RESET}\n")
-        sys.exit(1)
+BANNER = [
+    "╔══════════════════════════════════════════════════╗",
+    "║       Mother Earth Radio  Player  Hi-Res         ║",
+    "║         FLAC Streaming  192kHz / 24bit           ║",
+    "╚══════════════════════════════════════════════════╝",
+]
 
-    print(f"  {DIM}Player rilevato: {BOLD}{player}{RESET}\n")
+def safe_add(win, y, x, text, attr=0):
+    try:
+        h, w = win.getmaxyx()
+        if y < 0 or y >= h or x < 0 or x >= w:
+            return
+        win.addstr(y, x, text[:max(0, w - x - 1)], attr)
+    except curses.error:
+        pass
+
+def draw(stdscr):
+    curses.start_color()
+    curses.use_default_colors()
+    curses.init_pair(1, curses.COLOR_GREEN,  -1)
+    curses.init_pair(2, curses.COLOR_CYAN,   -1)
+    curses.init_pair(3, curses.COLOR_YELLOW, -1)
+    curses.init_pair(6, curses.COLOR_BLACK,  curses.COLOR_WHITE)  # cursore: barra grigia
+
+    GREEN  = curses.color_pair(1) | curses.A_BOLD
+    CYAN   = curses.color_pair(2)
+    YELLOW = curses.color_pair(3) | curses.A_BOLD
+    SEL    = curses.color_pair(6)  # cursore: barra grigia testo nero
+    DIM    = curses.A_DIM
+
+    stdscr.erase()
+
+    # Banner
+    row = 0
+    for line in BANNER:
+        safe_add(stdscr, row, 0, line, GREEN)
+        row += 1
+    row += 1
+
+    # Intestazioni
+    safe_add(stdscr, row, 2, "CANALE", CYAN | curses.A_BOLD if state["focus"] == "channel" else CYAN)
+    safe_add(stdscr, row, 30, "QUALITA'", CYAN | curses.A_BOLD if state["focus"] == "quality" else CYAN)
+    row += 1
+    safe_add(stdscr, row, 2,  "─" * 24, DIM)
+    safe_add(stdscr, row, 30, "─" * 20, DIM)
+    row += 1
+
+    ch_idx = state["ch_idx"]
+    q_idx  = state["q_idx"]
+    focus  = state["focus"]
+
+    # Colonna canali
+    for i, ch in enumerate(CHANNELS):
+        is_sel = (i == ch_idx)
+        name_label = f"  {ch['name']:<22}"
+        safe_add(stdscr, row + i, 2, name_label, SEL if is_sel else 0)
+
+    # Colonna qualità
+    streams = CHANNELS[ch_idx]["streams"]
+    for i, (q_name, _) in enumerate(streams):
+        is_sel = (i == q_idx)
+        name_label = f"  {q_name:<20}"
+        safe_add(stdscr, row + i, 30, name_label, SEL if is_sel else 0)
+
+    # Stato
+    status_row = row + max(len(CHANNELS), len(streams)) + 2
+    safe_add(stdscr, status_row,     0, "─" * 52, DIM)
+    safe_add(stdscr, status_row + 1, 2, state["status"], YELLOW)
+
+    # Legenda
+    leg = status_row + 3
+    safe_add(stdscr, leg,     2, "Frecce: naviga   ->/<-: cambia colonna", DIM)
+    safe_add(stdscr, leg + 1, 2, "INVIO: riproduci   S: stop   Q: esci", DIM)
+
+    stdscr.refresh()
+
+# ── Loop principale ───────────────────────────────────────────────────────────
+
+def main_loop(stdscr, player):
+    curses.curs_set(0)
+    stdscr.timeout(300)
 
     while True:
-        channel_key = choose_channel()
-        quality = choose_quality(channel_key)
-        if quality is None:
-            clear()
-            print_banner()
+        draw(stdscr)
+        key = stdscr.getch()
+        if key == -1:
             continue
-        play(player, channel_key, quality)
-        clear()
-        print_banner()
+
+        focus  = state["focus"]
+        ch_idx = state["ch_idx"]
+        q_idx  = state["q_idx"]
+        n_ch   = len(CHANNELS)
+        n_q    = len(CHANNELS[ch_idx]["streams"])
+
+        if key in (ord('q'), ord('Q')):
+            stop_playback()
+            return
+
+        elif key == curses.KEY_RIGHT:
+            state["focus"] = "quality"
+
+        elif key == curses.KEY_LEFT:
+            state["focus"] = "channel"
+
+        elif key == curses.KEY_UP:
+            if focus == "channel":
+                state["ch_idx"] = (ch_idx - 1) % n_ch
+                state["q_idx"]  = 0
+            else:
+                state["q_idx"] = (q_idx - 1) % n_q
+
+        elif key == curses.KEY_DOWN:
+            if focus == "channel":
+                state["ch_idx"] = (ch_idx + 1) % n_ch
+                state["q_idx"]  = 0
+            else:
+                state["q_idx"] = (q_idx + 1) % n_q
+
+        elif key in (ord('\n'), ord('\r'), curses.KEY_ENTER):
+            threading.Thread(
+                target=start_playback,
+                args=(player, state["ch_idx"], state["q_idx"]),
+                daemon=True,
+            ).start()
+
+        elif key in (ord('s'), ord('S')):
+            stop_playback()
+            state["playing_ch"] = None
+            state["playing_q"]  = None
+            state["status"]     = "[] Stop"
+
+# ── Entry point ───────────────────────────────────────────────────────────────
+
+def main():
+    player = detect_player()
+    if not player:
+        print("Errore: nessun player trovato.")
+        print("Installa mpv con:  sudo apt install mpv")
+        sys.exit(1)
+
+    try:
+        curses.wrapper(lambda stdscr: main_loop(stdscr, player))
+    except KeyboardInterrupt:
+        pass
+    finally:
+        stop_playback()
+        print("\nArrivederci!\n")
 
 if __name__ == "__main__":
-    try:
-        main()
-    except KeyboardInterrupt:
-        print(f"\n\n{DIM}  Uscita.{RESET}\n")
-        sys.exit(0)
+    main()
