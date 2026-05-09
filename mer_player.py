@@ -24,6 +24,7 @@ STRINGS = {
             ("Arrows: navigate",  "ENTER: play"),
             ("S: stop/resume",    "Q: quit"),
             ("A: autoplay on/off","L: change language"),
+            ("N: next track",     "H: show/hide help"),
         ],
         "header_channel":  "CHANNEL",
         "header_quality":  "QUALITY",
@@ -31,8 +32,9 @@ STRINGS = {
         "status_idle":     "Press ENTER to start playback",
         "status_autoplay": "Autoplay starting...",
         "status_error":    "ERROR: stream unreachable",
-        "status_stop":     "[] Stop  (press S to resume)",
+        "status_stop":     "■  Stop",
         "now_playing":     "Now Playing",
+        "now_next":        "Up Next",
         "label_artist":    "Artist",
         "label_title":     "Title",
         "label_album":     "Album",
@@ -44,6 +46,7 @@ STRINGS = {
             ("Pfeile: navigieren", "ENTER: spielen"),
             ("S: stop/weiter",     "Q: Ende"),
             ("A: autoplay on/off", "L: Sprache wechseln"),
+            ("N: nächster Titel",  "H: Hilfe ein/aus"),
         ],
         "header_channel":  "KANAL",
         "header_quality":  "QUALITÄT",
@@ -51,8 +54,9 @@ STRINGS = {
         "status_idle":     "ENTER drücken zum Starten",
         "status_autoplay": "Autoplay läuft...",
         "status_error":    "FEHLER: Stream nicht erreichbar",
-        "status_stop":     "[] Stop  (S zum Fortsetzen)",
+        "status_stop":     "■  Stop",
         "now_playing":     "Läuft gerade",
+        "now_next":        "Als Nächstes",
         "label_artist":    "Künstler",
         "label_title":     "Titel",
         "label_album":     "Album",
@@ -64,6 +68,7 @@ STRINGS = {
             ("Frecce: naviga",    "INVIO: riproduci"),
             ("S: stop/riprendi",  "Q: esci"),
             ("A: autoplay on/off","L: cambia lingua"),
+            ("N: prossimo brano", "H: mostra/nascondi"),
         ],
         "header_channel":  "CANALE",
         "header_quality":  "QUALITA'",
@@ -71,8 +76,9 @@ STRINGS = {
         "status_idle":     "Premi INVIO per avviare la riproduzione",
         "status_autoplay": "Autoplay in corso...",
         "status_error":    "ERRORE: stream non raggiungibile",
-        "status_stop":     "[] Stop  (S per riprendere)",
+        "status_stop":     "■  Stop",
         "now_playing":     "In riproduzione",
+        "now_next":        "Prossimo brano",
         "label_artist":    "Artista",
         "label_title":     "Titolo",
         "label_album":     "Album",
@@ -86,10 +92,11 @@ STRINGS = {
 CONFIG_PATH = os.path.expanduser("~/.config/mer_player.json")
 
 DEFAULT_CONFIG = {
-    "ch_idx":   0,
-    "q_idx":    1,     # FLAC 96kHz
-    "autoplay": True,
-    "lang":     "en",
+    "ch_idx":    0,
+    "q_idx":     1,     # FLAC 96kHz
+    "autoplay":  True,
+    "lang":      "en",
+    "show_help": True,
 }
 
 def load_config():
@@ -99,7 +106,8 @@ def load_config():
         cfg["ch_idx"]   = int(cfg.get("ch_idx",   0))
         cfg["q_idx"]    = int(cfg.get("q_idx",    0))
         cfg["autoplay"] = bool(cfg.get("autoplay", False))
-        cfg["lang"]     = cfg.get("lang", "en") if cfg.get("lang") in LANGS else "en"
+        cfg["lang"]      = cfg.get("lang", "en") if cfg.get("lang") in LANGS else "en"
+        cfg["show_help"] = bool(cfg.get("show_help", True))
         return cfg
     except Exception:
         return dict(DEFAULT_CONFIG)
@@ -108,8 +116,9 @@ def save_config():
     cfg = {
         "ch_idx":   state["ch_idx"],
         "q_idx":    state["q_idx"],
-        "autoplay": state["autoplay"],
-        "lang":     state["lang"],
+        "autoplay":  state["autoplay"],
+        "lang":      state["lang"],
+        "show_help": state["show_help"],
     }
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
@@ -182,6 +191,14 @@ state = {
     "track_duration": 0,
     "track_elapsed":  0,
     "track_updated":  0.0,
+    # Metadata brano successivo
+    "track_next_artist": "",
+    "track_next_title":  "",
+    "track_next_album":  "",
+    # Visualizzazione brano successivo (tasto N tenuto premuto)
+    "show_next":       False,
+    "next_pressed_at": 0.0,
+    "show_help":       True,
 }
 
 proc_lock = threading.Lock()
@@ -212,6 +229,11 @@ def _meta_poll_loop():
                 state["track_duration"] = int(np.get("duration", 0))
                 state["track_elapsed"]  = int(np.get("elapsed",  0))
                 state["track_updated"]  = time.time()
+                pn      = data.get("playing_next") or {}
+                pn_song = pn.get("song") or {}
+                state["track_next_artist"] = pn_song.get("artist", "")
+                state["track_next_title"]  = pn_song.get("title",  "")
+                state["track_next_album"]  = pn_song.get("album",  "")
                 remaining = int(np.get("remaining", 0))
                 wait = max(remaining, 1) + 2
             except Exception:
@@ -227,6 +249,9 @@ def _clear_metadata():
     state["track_duration"] = 0
     state["track_elapsed"]  = 0
     state["track_updated"]  = 0.0
+    state["track_next_artist"] = ""
+    state["track_next_title"]  = ""
+    state["track_next_album"]  = ""
 
 def fmt_time(seconds):
     m, s = divmod(max(0, int(seconds)), 60)
@@ -294,7 +319,7 @@ def start_playback(player, ch_idx, q_idx):
     ch_name = CHANNELS[ch_idx]["name"]
     q_name  = CHANNELS[ch_idx]["streams"][q_idx][0]
     state["status_key"]  = "playing"
-    state["status_info"] = f"{ch_name}  |  {q_name}"
+    state["status_info"] = f"{ch_name}  ·  {q_name}"
     save_config()
     threading.Thread(
         target=_watch_process,
@@ -309,7 +334,6 @@ BANNER = [
     "┌──────────────────────────────────────────────────┐",
     "│       Mother Earth Radio  Player  Hi-Res         │",
     "│         FLAC Streaming  192kHz / 24bit           │",
-    "├──────────────────────────────────────────────────┤",
 ]
 BANNER_SEP   = "├──────────────────────────────────────────────────┤"
 BANNER_CLOSE = "└──────────────────────────────────────────────────┘"
@@ -388,27 +412,17 @@ def draw(stdscr):
 
     stdscr.erase()
 
-    # Banner statico (titolo radio)
+    # Banner (titolo radio + istruzioni opzionali)
     row = 0
     for line in BANNER:
         safe_add(stdscr, row, 0, line, GREEN)
         row += 1
-
-    # Istruzioni tradotte a due colonne (bordi verdi, testo bianco)
-    for left, right in s["instructions"]:
-        _box_line(stdscr, row, f"{left:<22}{right}", GREEN, WHITE)
+    if state["show_help"]:
+        safe_add(stdscr, row, 0, BANNER_SEP, GREEN)
         row += 1
-
-    # Separatore + riga Autoplay dinamica
-    safe_add(stdscr, row, 0, BANNER_SEP, GREEN)
-    row += 1
-    ap_val  = "ON " if state["autoplay"] else "OFF"
-    ap_attr = GREEN if state["autoplay"] else DIM
-    safe_add(stdscr, row, 0,  "│", GREEN)
-    safe_add(stdscr, row, 1,  f"  {s['autoplay_label']}: [{ap_val}]{'':>33}", WHITE)
-    safe_add(stdscr, row, 14, ap_val, ap_attr)
-    safe_add(stdscr, row, 51, "│", GREEN)
-    row += 1
+        for left, right in s["instructions"]:
+            _box_line(stdscr, row, f"{left:<22}{right}", GREEN, WHITE)
+            row += 1
     safe_add(stdscr, row, 0, BANNER_CLOSE, GREEN)
     row += 2
 
@@ -436,18 +450,16 @@ def draw(stdscr):
     # Stato
     status_row = row + max(len(CHANNELS), len(streams)) + 1
     sk = state["status_key"]
-    if sk == "playing":
-        # >> canale | qualità prima della riga, "Now Playing" dopo
-        safe_add(stdscr, status_row,     2, f">> {state['status_info']}", YELLOW)
+    if sk in ("playing", "stop"):
+        icon  = "▶" if sk == "playing" else "■"
+        label = (s["now_next"] if state["show_next"] else s["now_playing"]) if sk == "playing" else s["status_stop"]
+        safe_add(stdscr, status_row,     2, f"{icon}  {state['status_info']}", YELLOW)
         safe_add(stdscr, status_row + 1, 2, "─" * 48, DIM)
-        safe_add(stdscr, status_row + 2, 2, s["now_playing"], YELLOW)
+        safe_add(stdscr, status_row + 2, 2, label, YELLOW)
     else:
         if sk == "error":
             status_text = s["status_error"]
             is_err = True
-        elif sk == "stop":
-            status_text = s["status_stop"]
-            is_err = False
         elif sk == "autoplay_start":
             status_text = s["status_autoplay"]
             is_err = False
@@ -458,21 +470,46 @@ def draw(stdscr):
         safe_add(stdscr, status_row + 1, 2, status_text, RED if is_err else YELLOW)
 
     # Info brano corrente
-    meta_row = status_row + (3 if sk == "playing" else 2)
+    meta_row = status_row + (3 if sk in ("playing", "stop") else 2)
     if state["track_updated"] > 0:
         _, w      = stdscr.getmaxyx()
         duration  = state["track_duration"]
         elapsed   = state["track_elapsed"] + int(time.time() - state["track_updated"])
         remaining = max(0, duration - elapsed)
 
-        meta_row += _draw_field(stdscr, meta_row, s["label_artist"], state["track_artist"], CYAN, BOX_WIDTH)
-        meta_row += _draw_field(stdscr, meta_row, s["label_title"],  state["track_title"],  CYAN, BOX_WIDTH)
-        meta_row += _draw_field(stdscr, meta_row, s["label_album"],  state["track_album"],  CYAN, BOX_WIDTH)
-        if duration > 0:
-            safe_add(stdscr, meta_row, 2,
-                     f"{s['label_duration']}:  {fmt_time(duration)}"
-                     f"  |  {s['label_remaining']}:  {fmt_time(remaining)}",
-                     DIM)
+        lw = max(len(s["label_artist"]), len(s["label_title"]),
+                 len(s["label_album"]),  len(s["label_duration"]))
+        def lbl(key): return f"{s[key]:<{lw}}"
+
+        if state["show_next"] and sk == "playing":
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_artist"), state["track_next_artist"], CYAN, BOX_WIDTH)
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_title"),  state["track_next_title"],  CYAN, BOX_WIDTH)
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_album"),  state["track_next_album"],  CYAN, BOX_WIDTH)
+        else:
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_artist"), state["track_artist"], CYAN, BOX_WIDTH)
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_title"),  state["track_title"],  CYAN, BOX_WIDTH)
+            meta_row += _draw_field(stdscr, meta_row, lbl("label_album"),  state["track_album"],  CYAN, BOX_WIDTH)
+            if duration > 0:
+                left  = f"{lbl('label_duration')}:  {fmt_time(duration)}"
+                right = f"{s['label_remaining']}:  {fmt_time(remaining)}"
+                safe_add(stdscr, meta_row, 2,
+                         f"{left}{right:>{BOX_WIDTH - 2 - len(left)}}",
+                         DIM)
+                meta_row += 1
+
+    # Box Autoplay (sempre visibile, in fondo)
+    meta_row += 1
+    safe_add(stdscr, meta_row, 0, BANNER[0], GREEN)
+    meta_row += 1
+    ap_val  = "ON " if state["autoplay"] else "OFF"
+    ap_attr = GREEN if state["autoplay"] else DIM
+    h_hint  = "" if state["show_help"] else s["instructions"][-1][1]
+    safe_add(stdscr, meta_row, 0,  "│", GREEN)
+    safe_add(stdscr, meta_row, 1,  f"  {s['autoplay_label']}: [{ap_val}]{h_hint:>33}", WHITE)
+    safe_add(stdscr, meta_row, 14, ap_val, ap_attr)
+    safe_add(stdscr, meta_row, 51, "│", GREEN)
+    meta_row += 1
+    safe_add(stdscr, meta_row, 0, BANNER_CLOSE, GREEN)
 
     stdscr.refresh()
 
@@ -480,7 +517,7 @@ def draw(stdscr):
 
 def main_loop(stdscr, player):
     curses.curs_set(0)
-    stdscr.timeout(300)
+    stdscr.timeout(100)
 
     if state["autoplay"]:
         state["status_key"] = "autoplay_start"
@@ -491,6 +528,10 @@ def main_loop(stdscr, player):
         ).start()
 
     while True:
+        # Rilascio tasto N: se non premuto da >150ms, torna al brano corrente
+        if state["show_next"] and time.time() - state["next_pressed_at"] > 0.6:
+            state["show_next"] = False
+
         draw(stdscr)
         key = stdscr.getch()
         if key == -1:
@@ -549,6 +590,14 @@ def main_loop(stdscr, player):
             state["autoplay"] = not state["autoplay"]
             save_config()
 
+        elif key in (ord('h'), ord('H')):
+            state["show_help"] = not state["show_help"]
+            save_config()
+
+        elif key in (ord('n'), ord('N')):
+            state["show_next"]       = True
+            state["next_pressed_at"] = time.time()
+
         elif key in (ord('l'), ord('L')):
             state["lang"] = LANGS[(LANGS.index(state["lang"]) + 1) % len(LANGS)]
             save_config()
@@ -565,8 +614,9 @@ def main():
     cfg = load_config()
     state["ch_idx"]   = min(cfg["ch_idx"], len(CHANNELS) - 1)
     state["q_idx"]    = min(cfg["q_idx"],  len(CHANNELS[state["ch_idx"]]["streams"]) - 1)
-    state["autoplay"] = cfg["autoplay"]
-    state["lang"]     = cfg["lang"]
+    state["autoplay"]  = cfg["autoplay"]
+    state["lang"]      = cfg["lang"]
+    state["show_help"] = cfg["show_help"]
 
     _meta_stop.clear()
     threading.Thread(target=_meta_poll_loop, daemon=True).start()
