@@ -25,6 +25,7 @@ STRINGS = {
             ("S: stop/resume",    "Q: quit"),
             ("A: autoplay on/off","L: change language"),
             ("N: next track",     "H: show/hide help"),
+            ("C: compact mode",   ""),
         ],
         "header_channel":  "CHANNEL",
         "header_quality":  "QUALITY",
@@ -47,6 +48,7 @@ STRINGS = {
             ("S: stop/weiter",     "Q: Ende"),
             ("A: autoplay on/off", "L: Sprache wechseln"),
             ("N: nächster Titel",  "H: Hilfe ein/aus"),
+            ("C: kompakter Modus", ""),
         ],
         "header_channel":  "KANAL",
         "header_quality":  "QUALITÄT",
@@ -69,6 +71,7 @@ STRINGS = {
             ("S: stop/riprendi",  "Q: esci"),
             ("A: autoplay on/off","L: cambia lingua"),
             ("N: prossimo brano", "H: mostra/nascondi"),
+            ("C: modalità compatta", ""),
         ],
         "header_channel":  "CANALE",
         "header_quality":  "QUALITA'",
@@ -97,6 +100,7 @@ DEFAULT_CONFIG = {
     "autoplay":  True,
     "lang":      "en",
     "show_help": True,
+    "compact":   False,
 }
 
 def load_config():
@@ -108,6 +112,7 @@ def load_config():
         cfg["autoplay"] = bool(cfg.get("autoplay", False))
         cfg["lang"]      = cfg.get("lang", "en") if cfg.get("lang") in LANGS else "en"
         cfg["show_help"] = bool(cfg.get("show_help", True))
+        cfg["compact"]   = bool(cfg.get("compact",   False))
         return cfg
     except Exception:
         return dict(DEFAULT_CONFIG)
@@ -119,6 +124,7 @@ def save_config():
         "autoplay":  state["autoplay"],
         "lang":      state["lang"],
         "show_help": state["show_help"],
+        "compact":   state["compact"],
     }
     os.makedirs(os.path.dirname(CONFIG_PATH), exist_ok=True)
     with open(CONFIG_PATH, "w") as f:
@@ -199,6 +205,7 @@ state = {
     "show_next":       False,
     "next_pressed_at": 0.0,
     "show_help":       True,
+    "compact":         False,
 }
 
 proc_lock = threading.Lock()
@@ -424,31 +431,34 @@ def draw(stdscr):
             _box_line(stdscr, row, f"{left:<22}{right}", GREEN, WHITE)
             row += 1
     safe_add(stdscr, row, 0, BANNER_CLOSE, GREEN)
-    row += 2
+    row += 1 if state["compact"] else 2
 
-    # Intestazioni colonne
-    ch_attr = CYAN | curses.A_BOLD if focus == "channel" else CYAN
-    q_attr  = CYAN | curses.A_BOLD if focus == "quality"  else CYAN
-    safe_add(stdscr, row, 2,  s["header_channel"], ch_attr)
-    safe_add(stdscr, row, 30, s["header_quality"],  q_attr)
-    row += 1
-    safe_add(stdscr, row, 2,  "─" * 24, DIM)
-    safe_add(stdscr, row, 30, "─" * 20, DIM)
-    row += 1
-
-    # Colonna canali
-    for i, ch in enumerate(CHANNELS):
-        is_sel = (i == ch_idx)
-        safe_add(stdscr, row + i, 2, f"{ch['name']:<22}", SEL if is_sel else 0)
-
-    # Colonna qualità
+    # Intestazioni colonne (nascoste in modalità compatta)
     streams = CHANNELS[ch_idx]["streams"]
-    for i, (q_name, _) in enumerate(streams):
-        is_sel = (i == q_idx)
-        safe_add(stdscr, row + i, 30, f"{q_name:<20}", SEL if is_sel else 0)
+    if not state["compact"]:
+        ch_attr = CYAN | curses.A_BOLD if focus == "channel" else CYAN
+        q_attr  = CYAN | curses.A_BOLD if focus == "quality"  else CYAN
+        safe_add(stdscr, row, 2,  s["header_channel"], ch_attr)
+        safe_add(stdscr, row, 30, s["header_quality"],  q_attr)
+        row += 1
+        safe_add(stdscr, row, 2,  "─" * 24, DIM)
+        safe_add(stdscr, row, 30, "─" * 20, DIM)
+        row += 1
+
+        # Colonna canali
+        for i, ch in enumerate(CHANNELS):
+            is_sel = (i == ch_idx)
+            safe_add(stdscr, row + i, 2, f"{ch['name']:<22}", SEL if is_sel else 0)
+
+        # Colonna qualità
+        for i, (q_name, _) in enumerate(streams):
+            is_sel = (i == q_idx)
+            safe_add(stdscr, row + i, 30, f"{q_name:<20}", SEL if is_sel else 0)
+
+        row += max(len(CHANNELS), len(streams))
 
     # Stato
-    status_row = row + max(len(CHANNELS), len(streams)) + 1
+    status_row = row + 1
     sk = state["status_key"]
     if sk in ("playing", "stop"):
         icon  = "▶" if sk == "playing" else "■"
@@ -503,7 +513,7 @@ def draw(stdscr):
     meta_row += 1
     ap_val  = "ON " if state["autoplay"] else "OFF"
     ap_attr = GREEN if state["autoplay"] else DIM
-    h_hint  = "" if state["show_help"] else s["instructions"][-1][1]
+    h_hint  = "" if state["show_help"] else s["instructions"][3][1]
     safe_add(stdscr, meta_row, 0,  "│", GREEN)
     safe_add(stdscr, meta_row, 1,  f"  {s['autoplay_label']}: [{ap_val}]{h_hint:>33}", WHITE)
     safe_add(stdscr, meta_row, 14, ap_val, ap_attr)
@@ -594,6 +604,10 @@ def main_loop(stdscr, player):
             state["show_help"] = not state["show_help"]
             save_config()
 
+        elif key in (ord('c'), ord('C')):
+            state["compact"] = not state["compact"]
+            save_config()
+
         elif key in (ord('n'), ord('N')):
             state["show_next"]       = True
             state["next_pressed_at"] = time.time()
@@ -617,6 +631,7 @@ def main():
     state["autoplay"]  = cfg["autoplay"]
     state["lang"]      = cfg["lang"]
     state["show_help"] = cfg["show_help"]
+    state["compact"]   = cfg["compact"]
 
     _meta_stop.clear()
     threading.Thread(target=_meta_poll_loop, daemon=True).start()
