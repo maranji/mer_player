@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
 """
-Mother Earth Radio - Player per Linux con interfaccia curses
-Naviga con i tasti freccia, seleziona con INVIO, esci con Q
-Richiede: mpv installato sul sistema
+Mother Earth Radio - Linux player - Requires mpv installed
 """
 
 import curses
@@ -14,9 +12,9 @@ import os
 import time
 import urllib.request
 
-# ── Lingue ────────────────────────────────────────────────────────────────────
+# ── Languages ─────────────────────────────────────────────────────────────────
 
-LANGS = ["en", "de", "it"]
+LANGS = ["en", "de", "it", "fr", "es"]
 
 STRINGS = {
     "en": {
@@ -88,6 +86,52 @@ STRINGS = {
         "label_duration":  "Durata",
         "label_remaining": "Rimanente",
     },
+    "fr": {
+        "instructions": [
+            ("Flèches: naviguer",   "ENTRÉE: jouer"),
+            ("S: stop/reprendre",   "Q: quitter"),
+            ("A: lecture auto on/off", "L: langue"),
+            ("N: piste suivante",   "H: aide on/off"),
+            ("C: mode compact",     ""),
+        ],
+        "header_channel":  "CHAÎNE",
+        "header_quality":  "QUALITÉ",
+        "autoplay_label":  "Lecture auto",
+        "status_idle":     "Appuyez sur ENTRÉE pour démarrer",
+        "status_autoplay": "Lecture auto en cours...",
+        "status_error":    "ERREUR: flux inaccessible",
+        "status_stop":     "■  Stop",
+        "now_playing":     "En cours",
+        "now_next":        "Suivant",
+        "label_artist":    "Artiste",
+        "label_title":     "Titre",
+        "label_album":     "Album",
+        "label_duration":  "Durée",
+        "label_remaining": "Restant",
+    },
+    "es": {
+        "instructions": [
+            ("Flechas: navegar",    "ENTER: reproducir"),
+            ("S: stop/reanudar",    "Q: salir"),
+            ("A: autoplay on/off",  "L: idioma"),
+            ("N: siguiente pista",  "H: ayuda on/off"),
+            ("C: modo compacto",    ""),
+        ],
+        "header_channel":  "CANAL",
+        "header_quality":  "CALIDAD",
+        "autoplay_label":  "Autoplay",
+        "status_idle":     "Pulsa ENTER para iniciar la reproducción",
+        "status_autoplay": "Autoplay iniciando...",
+        "status_error":    "ERROR: stream inaccesible",
+        "status_stop":     "■  Stop",
+        "now_playing":     "Reproduciendo",
+        "now_next":        "Siguiente",
+        "label_artist":    "Artista",
+        "label_title":     "Título",
+        "label_album":     "Álbum",
+        "label_duration":  "Duración",
+        "label_remaining": "Restante",
+    },
 }
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -130,7 +174,7 @@ def save_config():
     with open(CONFIG_PATH, "w") as f:
         json.dump(cfg, f, indent=2)
 
-# ── Canali e stream ───────────────────────────────────────────────────────────
+# ── Channels and streams ──────────────────────────────────────────────────────
 
 CHANNELS = [
     {
@@ -177,7 +221,7 @@ CHANNELS = [
 
 API_BASE = "https://stream.motherearthradio.de/api/nowplaying"
 
-# ── Stato globale ─────────────────────────────────────────────────────────────
+# ── Global state ──────────────────────────────────────────────────────────────
 
 state = {
     "proc":           None,
@@ -189,23 +233,24 @@ state = {
     "autoplay":       False,
     "lang":           "en",
     "status_key":     "idle",    # idle | autoplay_start | playing | error | stop
-    "status_info":    "",        # usato da "playing": "Canale | Qualità"
-    # Metadata brano corrente
+    "status_info":    "",        # used by "playing": "Channel | Quality"
+    # Current track metadata
     "track_artist":   "",
     "track_title":    "",
     "track_album":    "",
     "track_duration": 0,
     "track_elapsed":  0,
     "track_updated":  0.0,
-    # Metadata brano successivo
+    # Next track metadata
     "track_next_artist": "",
     "track_next_title":  "",
     "track_next_album":  "",
-    # Visualizzazione brano successivo (tasto N tenuto premuto)
+    # Show next track (N key held)
     "show_next":       False,
     "next_pressed_at": 0.0,
-    "show_help":       True,
-    "compact":         False,
+    "show_help":          True,
+    "compact":            False,
+    "compact_navigating": False,
 }
 
 proc_lock = threading.Lock()
@@ -216,7 +261,7 @@ _meta_stop   = threading.Event()
 _meta_wakeup = threading.Event()
 
 def _meta_poll_loop():
-    """Interroga l'API AzuraCast e dorme fino alla fine del brano corrente."""
+    """Polls the AzuraCast API and sleeps until the current track ends."""
     while not _meta_stop.is_set():
         _meta_wakeup.clear()
         ch_idx = state["playing_ch"]
@@ -295,7 +340,7 @@ def stop_playback():
     _clear_metadata()
 
 def _watch_process(proc, ch_idx, q_idx):
-    """Monitora il processo: se muore entro 5s è un errore di stream."""
+    """Watches the process: if it exits within 5s it's a stream error."""
     start = time.time()
     proc.wait()
     elapsed = time.time() - start
@@ -334,9 +379,9 @@ def start_playback(player, ch_idx, q_idx):
         daemon=True,
     ).start()
 
-# ── Disegno curses ────────────────────────────────────────────────────────────
+# ── Curses drawing ────────────────────────────────────────────────────────────
 
-# Parti statiche del banner (titolo radio, non tradotte)
+# Static banner lines (radio title, untranslated)
 BANNER = [
     "┌──────────────────────────────────────────────────┐",
     "│       Mother Earth Radio  Player  Hi-Res         │",
@@ -344,7 +389,7 @@ BANNER = [
 ]
 BANNER_SEP   = "├──────────────────────────────────────────────────┤"
 BANNER_CLOSE = "└──────────────────────────────────────────────────┘"
-BOX_WIDTH    = 52   # larghezza totale del riquadro verde (inclusi i bordi ║)
+BOX_WIDTH    = 52   # total width of the green box (including │ borders)
 
 def safe_add(win, y, x, text, attr=0):
     try:
@@ -356,14 +401,14 @@ def safe_add(win, y, x, text, attr=0):
         pass
 
 def _box_line(stdscr, y, text, border_attr, inner_attr):
-    """Riga box: bordi ║ con border_attr, testo interno (2 spazi + text) con inner_attr."""
+    """Box row: │ borders with border_attr, inner text (2 spaces + text) with inner_attr."""
     inner = ("  " + text).ljust(50)[:50]
     safe_add(stdscr, y, 0,  "│", border_attr)
     safe_add(stdscr, y, 1,  inner, inner_attr)
     safe_add(stdscr, y, 51, "│", border_attr)
 
 def _wrap_text(text, first_width, cont_width):
-    """Divide text in righe rispettando i bordi delle parole."""
+    """Splits text into lines respecting word boundaries."""
     words = text.split()
     if not words:
         return ["—"]
@@ -382,7 +427,7 @@ def _wrap_text(text, first_width, cont_width):
     return lines
 
 def _draw_field(stdscr, row, label, text, attr, term_width):
-    """Disegna un campo metadata con a capo automatico. Restituisce il numero di righe usate."""
+    """Draws a metadata field with word wrap. Returns the number of rows used."""
     prefix     = f"{label}:  "
     col        = 2
     text_col   = col + len(prefix)
@@ -419,7 +464,7 @@ def draw(stdscr):
 
     stdscr.erase()
 
-    # Banner (titolo radio + istruzioni opzionali)
+    # Banner (radio title + optional instructions)
     row = 0
     for line in BANNER:
         safe_add(stdscr, row, 0, line, GREEN)
@@ -433,7 +478,18 @@ def draw(stdscr):
     safe_add(stdscr, row, 0, BANNER_CLOSE, GREEN)
     row += 1 if state["compact"] else 2
 
-    # Intestazioni colonne (nascoste in modalità compatta)
+    # Compact mode: selection row — shown after an arrow key, hidden after ENTER or S
+    if state["compact"] and state["compact_navigating"]:
+        ch_name = CHANNELS[ch_idx]["name"]
+        q_name  = CHANNELS[ch_idx]["streams"][q_idx][0]
+        sep     = "  ·  "
+        ch_attr = curses.A_BOLD if focus == "channel" else DIM
+        q_attr  = curses.A_BOLD if focus == "quality"  else DIM
+        safe_add(stdscr, row, 2, ch_name, ch_attr)
+        safe_add(stdscr, row, 2 + len(ch_name), sep, DIM)
+        safe_add(stdscr, row, 2 + len(ch_name) + len(sep), q_name, q_attr)
+
+    # Column headers (hidden in compact mode)
     streams = CHANNELS[ch_idx]["streams"]
     if not state["compact"]:
         ch_attr = CYAN | curses.A_BOLD if focus == "channel" else CYAN
@@ -445,19 +501,19 @@ def draw(stdscr):
         safe_add(stdscr, row, 30, "─" * 20, DIM)
         row += 1
 
-        # Colonna canali
+        # Channel column
         for i, ch in enumerate(CHANNELS):
             is_sel = (i == ch_idx)
             safe_add(stdscr, row + i, 2, f"{ch['name']:<22}", SEL if is_sel else 0)
 
-        # Colonna qualità
+        # Quality column
         for i, (q_name, _) in enumerate(streams):
             is_sel = (i == q_idx)
             safe_add(stdscr, row + i, 30, f"{q_name:<20}", SEL if is_sel else 0)
 
         row += max(len(CHANNELS), len(streams))
 
-    # Stato
+    # Status
     status_row = row + 1
     sk = state["status_key"]
     if sk in ("playing", "stop"):
@@ -479,7 +535,7 @@ def draw(stdscr):
         safe_add(stdscr, status_row,     2, "─" * 48, DIM)
         safe_add(stdscr, status_row + 1, 2, status_text, RED if is_err else YELLOW)
 
-    # Info brano corrente
+    # Current track info
     meta_row = status_row + (3 if sk in ("playing", "stop") else 2)
     if state["track_updated"] > 0:
         _, w      = stdscr.getmaxyx()
@@ -507,7 +563,7 @@ def draw(stdscr):
                          DIM)
                 meta_row += 1
 
-    # Box Autoplay (sempre visibile, in fondo)
+    # Autoplay box (always visible, at the bottom)
     meta_row += 1
     safe_add(stdscr, meta_row, 0, BANNER[0], GREEN)
     meta_row += 1
@@ -523,7 +579,7 @@ def draw(stdscr):
 
     stdscr.refresh()
 
-# ── Loop principale ───────────────────────────────────────────────────────────
+# ── Main loop ─────────────────────────────────────────────────────────────────
 
 def main_loop(stdscr, player):
     curses.curs_set(0)
@@ -538,7 +594,7 @@ def main_loop(stdscr, player):
         ).start()
 
     while True:
-        # Rilascio tasto N: se non premuto da >150ms, torna al brano corrente
+        # N key release: if not pressed for >600ms, revert to current track
         if state["show_next"] and time.time() - state["next_pressed_at"] > 0.6:
             state["show_next"] = False
 
@@ -559,9 +615,13 @@ def main_loop(stdscr, player):
 
         elif key == curses.KEY_RIGHT:
             state["focus"] = "quality"
+            if state["compact"]:
+                state["compact_navigating"] = True
 
         elif key == curses.KEY_LEFT:
             state["focus"] = "channel"
+            if state["compact"]:
+                state["compact_navigating"] = True
 
         elif key == curses.KEY_UP:
             if focus == "channel":
@@ -569,6 +629,8 @@ def main_loop(stdscr, player):
                 state["q_idx"]  = min(q_idx, len(CHANNELS[state["ch_idx"]]["streams"]) - 1)
             else:
                 state["q_idx"] = (q_idx - 1) % n_q
+            if state["compact"]:
+                state["compact_navigating"] = True
 
         elif key == curses.KEY_DOWN:
             if focus == "channel":
@@ -576,8 +638,12 @@ def main_loop(stdscr, player):
                 state["q_idx"]  = min(q_idx, len(CHANNELS[state["ch_idx"]]["streams"]) - 1)
             else:
                 state["q_idx"] = (q_idx + 1) % n_q
+            if state["compact"]:
+                state["compact_navigating"] = True
 
         elif key in (ord('\n'), ord('\r'), curses.KEY_ENTER):
+            if state["compact"]:
+                state["compact_navigating"] = False
             threading.Thread(
                 target=start_playback,
                 args=(player, state["ch_idx"], state["q_idx"]),
@@ -589,12 +655,16 @@ def main_loop(stdscr, player):
             if proc and proc.poll() is None:
                 stop_playback()
                 state["status_key"] = "stop"
+                state["compact_navigating"] = False
             elif state["playing_ch"] is not None:
                 threading.Thread(
                     target=start_playback,
                     args=(player, state["playing_ch"], state["playing_q"]),
                     daemon=True,
                 ).start()
+
+        elif key == 27 and state["compact"]:   # ESC
+            state["compact_navigating"] = False
 
         elif key in (ord('a'), ord('A')):
             state["autoplay"] = not state["autoplay"]
@@ -621,8 +691,8 @@ def main_loop(stdscr, player):
 def main():
     player = detect_player()
     if not player:
-        print("Errore: nessun player trovato.")
-        print("Installa mpv con:  sudo apt install mpv")
+        print("Error: no media player found.")
+        print("Install mpv with:  sudo apt install mpv")
         sys.exit(1)
 
     cfg = load_config()
@@ -643,7 +713,7 @@ def main():
     finally:
         _meta_stop.set()
         stop_playback()
-        print("\nArrivederci!\n")
+        print("\nGoodbye!\n")
 
 if __name__ == "__main__":
     main()

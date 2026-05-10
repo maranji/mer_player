@@ -2,10 +2,6 @@
 
 A terminal-based Hi-Res audio player for [Mother Earth Radio](https://www.motherearthradio.de) — a German independent internet radio station broadcasting high-quality lossless music across multiple curated channels, completely free and without commercials.
 
----
-
-## Overview
-
 This player provides a lightweight, keyboard-driven TUI (Text User Interface) for Linux, built with Python and `curses`. It is designed for users who want to enjoy Mother Earth Radio directly from the terminal without a graphical application, with full control over channel and stream quality selection.
 
 **Disclaimer**: this player is an independent, unofficial client. It connects to the publicly available streams and API provided by [Mother Earth Radio](https://www.motherearthradio.de). Please support the station if you enjoy their work.
@@ -15,19 +11,36 @@ This player provides a lightweight, keyboard-driven TUI (Text User Interface) fo
 ## Screenshots
 
 ### Default view — English
-<!-- Add screenshot here: full UI in English with channel/quality columns -->
+![Default view in English](docs/default_view_en.png)
+Full interface with the two-column layout: channel list on the left, quality levels on the right. The active column is highlighted in bold cyan; the selected item is shown with a reverse-video highlight.
 
-### Compact mode
-<!-- Add screenshot here: compact mode active (C key), columns hidden -->
+### Compact mode — idle
+![Compact mode, idle](docs/compact_idle.png)
+Compact mode hides both selection columns, leaving only the now-playing status and track metadata. Press **C** to toggle.
+
+### Compact mode — navigating
+![Compact mode, selection bar active](docs/compact_navigating.png)
+When an arrow key is pressed in compact mode a single-line selection bar appears between the banner and the status line. The active field (channel or quality) is shown in **bold**; the inactive one is dimmed. The bar disappears after pressing **ENTER**, **S**, or **ESC**.
 
 ### Help panel visible
-<!-- Add screenshot here: help box expanded (H key) -->
+![Help panel expanded](docs/help_panel.png)
+The help box inside the banner lists all keyboard shortcuts. Press **H** to show or hide it. The preference is saved across sessions.
 
 ### German interface
-<!-- Add screenshot here: UI with German language selected -->
+![German interface](docs/interface_de.png)
+All UI labels, status messages and instructions translated to German. Switch with **L**.
 
 ### Italian interface
-<!-- Add screenshot here: UI with Italian language selected -->
+![Italian interface](docs/interface_it.png)
+All UI labels, status messages and instructions translated to Italian. Switch with **L**.
+
+### French interface
+![French interface](docs/interface_fr.png)
+All UI labels, status messages and instructions translated to French. Switch with **L**.
+
+### Spanish interface
+![Spanish interface](docs/interface_es.png)
+All UI labels, status messages and instructions translated to Spanish. Switch with **L**.
 
 ---
 
@@ -71,11 +84,18 @@ Press **S** to stop playback. The channel and quality remain displayed. Press **
 ### Compact Mode
 Press **C** to hide the channel and quality selection columns. Ideal for users who always listen to the same channel and want a minimal interface showing only the now-playing information.
 
+Navigation still works exactly as in normal mode. When an arrow key is pressed, a selection bar appears showing the currently highlighted channel and quality — the active field is shown in **bold**, the inactive one in dimmed text, matching the focus state. The bar disappears after:
+- pressing **ENTER** (playback starts and the info is already shown in the status line)
+- pressing **S** (stop)
+- pressing **ESC**
+
 ### Multilingual Interface
-The UI is available in three languages, switchable at runtime with the **L** key:
+The UI is available in five languages, switchable at runtime with the **L** key:
 - English (default)
 - German
 - Italian
+- French
+- Spanish
 
 Language preference is saved and restored on next launch.
 
@@ -98,9 +118,10 @@ User preferences are saved automatically to `~/.config/mer_player.json`:
 | `S` | Stop / resume |
 | `A` | Toggle autoplay |
 | `N` *(hold)* | Peek at next track |
-| `L` | Cycle language (EN → DE → IT) |
+| `L` | Cycle language (EN → DE → IT → FR → ES) |
 | `H` | Show / hide help panel |
 | `C` | Toggle compact mode |
+| `ESC` | *(compact mode)* Dismiss selection bar |
 | `Q` | Quit |
 
 ---
