@@ -139,12 +139,10 @@ sudo apt install mpv
 No installation required. Clone the repository and run the script:
 
 ```bash
-git clone https://github.com/maranji/mother-earth-radio.git
-cd mother-earth-radio
+git clone https://github.com/maranji/mer_player.git
+cd mer_player
 python3 mer_player.py
 ```
-
-> Replace `YOUR_USERNAME` with your GitHub username.
 
 ---
 
