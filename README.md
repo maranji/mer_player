@@ -150,5 +150,7 @@ python3 mer_player.py
 
 This project is open source, released under the [MIT License](LICENSE).
 
+This software is provided **as is**, without any warranty of fitness for a particular purpose or guarantee of correct operation. The developer provides **no user support** of any kind.
+
 ---
 
