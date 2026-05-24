@@ -59,6 +59,7 @@ Each channel offers four quality levels:
 
 ### Now Playing Metadata
 Track information is retrieved in real time from the AzuraCast public API:
+
 - Artist, Title, Album
 - Track duration and time remaining
 - Smart polling: the player sleeps until the current track ends, minimising unnecessary API calls
@@ -94,6 +95,7 @@ Language preference is saved and restored on next launch.
 
 ### Persistent Configuration
 User preferences are saved automatically to `~/.config/mer_player.json`:
+
 - Last channel and quality selected
 - Autoplay on/off
 - Language
