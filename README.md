@@ -10,37 +10,28 @@ This player provides a lightweight, keyboard-driven TUI (Text User Interface) fo
 
 ## Screenshots
 
-### Default view — English
-![Default view in English](docs/default_view_en.png)
+### Full Interface 
 Full interface with the two-column layout: channel list on the left, quality levels on the right. The active column is highlighted in bold cyan; the selected item is shown with a reverse-video highlight.
+Languages available: English, German, Italian, Spanish, French
+
+![Default view in English](docs/full_view_en.png)
+![Default view in German](docs/full_view_de.png)
 
 ### Compact mode — idle
-![Compact mode, idle](docs/compact_idle.png)
 Compact mode hides both selection columns, leaving only the now-playing status and track metadata. Press **C** to toggle.
 
+![Compact mode, idle](docs/compact_idle_en.png)
+
+
 ### Compact mode — navigating
-![Compact mode, selection bar active](docs/compact_navigating.png)
 When an arrow key is pressed in compact mode a single-line selection bar appears between the banner and the status line. The active field (channel or quality) is shown in **bold**; the inactive one is dimmed. The bar disappears after pressing **ENTER**, **S**, or **ESC**.
 
+![Compact mode, selection bar active](docs/compact_navigating_en.png)
+
 ### Help panel visible
-![Help panel expanded](docs/help_panel.png)
 The help box inside the banner lists all keyboard shortcuts. Press **H** to show or hide it. The preference is saved across sessions.
 
-### German interface
-![German interface](docs/interface_de.png)
-All UI labels, status messages and instructions translated to German. Switch with **L**.
-
-### Italian interface
-![Italian interface](docs/interface_it.png)
-All UI labels, status messages and instructions translated to Italian. Switch with **L**.
-
-### French interface
-![French interface](docs/interface_fr.png)
-All UI labels, status messages and instructions translated to French. Switch with **L**.
-
-### Spanish interface
-![Spanish interface](docs/interface_es.png)
-All UI labels, status messages and instructions translated to Spanish. Switch with **L**.
+![Help panel expanded](docs/help_panel_en.png)
 
 ---
 
@@ -85,12 +76,14 @@ Press **S** to stop playback. The channel and quality remain displayed. Press **
 Press **C** to hide the channel and quality selection columns. Ideal for users who always listen to the same channel and want a minimal interface showing only the now-playing information.
 
 Navigation still works exactly as in normal mode. When an arrow key is pressed, a selection bar appears showing the currently highlighted channel and quality — the active field is shown in **bold**, the inactive one in dimmed text, matching the focus state. The bar disappears after:
+
 - pressing **ENTER** (playback starts and the info is already shown in the status line)
 - pressing **S** (stop)
 - pressing **ESC**
 
 ### Multilingual Interface
 The UI is available in five languages, switchable at runtime with the **L** key:
+
 - English (default)
 - German
 - Italian
