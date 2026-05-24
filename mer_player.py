@@ -323,7 +323,7 @@ def build_cmd(player, url):
     if player == "mpv":
         return ["mpv", "--no-video", "--no-ytdl", "--msg-level=all=error", url]
     elif player == "vlc":
-        return ["vlc", "--no-video", "--quiet", url]
+        return ["vlc", "--intf", "dummy", "--no-video", "--quiet", url]
     else:
         return ["ffplay", "-nodisp", "-loglevel", "error", url]
 
